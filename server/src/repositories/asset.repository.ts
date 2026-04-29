@@ -84,6 +84,7 @@ interface AssetBuilderOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
+  hasCoordinates?: boolean;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -660,6 +661,17 @@ export class AssetRepository {
           })
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(options.hasCoordinates !== undefined, (qb) =>
+            qb.where((eb) => {
+              const exists = eb.exists(
+                eb
+                  .selectFrom('asset_exif')
+                  .whereRef('assetId', '=', 'asset.id')
+                  .where((eb) => eb.or([eb('latitude', 'is not', null), eb('longitude', 'is not', null)])),
+              );
+              return options.hasCoordinates ? exists : eb.not(exists);
+            }),
+          )
           .$if(!!options.albumId, (qb) =>
             qb
               .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -784,6 +796,11 @@ export class AssetRepository {
                 (join) => join.onTrue(),
               )
               .select('stack'),
+          )
+          .$if(options.hasCoordinates !== undefined, (qb) =>
+            options.hasCoordinates
+              ? qb.where((eb) => eb.or([eb('asset_exif.latitude', 'is not', null), eb('asset_exif.longitude', 'is not', null)]))
+              : qb.where((eb) => eb.and([eb('asset_exif.latitude', 'is', null), eb('asset_exif.longitude', 'is', null)])),
           )
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
